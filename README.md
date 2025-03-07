@@ -1,2 +1,2 @@
-# ollama-telegram-bot
+#                  Ollama-telegram-bot
 🦙 Ollama Telegram bot
