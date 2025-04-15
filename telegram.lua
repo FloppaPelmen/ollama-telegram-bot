@@ -8,7 +8,7 @@ if not geoScanner then error("GeoScanner not found!") end
 
 -- Функция проверки допустимости позиции
 local function isValidPosition(x, y, z)
-    return y >= 60 and y <= 200
+    return x and y and z and y >= 60 and y <= 200
 end
 
 -- Алгоритм A* для поиска пути
@@ -156,8 +156,9 @@ end
 
 -- Основной цикл
 local function main()
-    startPosition = {gps.locate(5)}
-    if not startPosition[1] then error("Initial GPS signal lost!") end
+    local initialPosition = gps.locate(5)
+    if not initialPosition then error("Initial GPS signal lost!") end
+    startPosition = {x = initialPosition[1], y = initialPosition[2], z = initialPosition[3]}
 
     while true do
         local mobs = geoScanner.getClosestEntities()
