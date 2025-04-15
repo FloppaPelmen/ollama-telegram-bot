@@ -44,7 +44,7 @@ local function splitText(text, maxWidth)
     end
     
     if breakPoint == 1 then
-      -- If no space found, force break at maxWidth
+      -- пидорас
       table.insert(lines, text:sub(1, maxWidth))
       text = text:sub(maxWidth + 1)
     else
@@ -98,7 +98,7 @@ end
 local function drawInputBar()
   local w, h = term.getSize()
   
-  -- Верхняя строка области ввода (инструкция)
+  -- веррр
   term.setCursorPos(1, h - 2)
   term.setBackgroundColor(colors.inputBackground)
   term.setTextColor(colors.input)
@@ -119,7 +119,7 @@ end
 
 local function displayMessage(sender, text, isYou, isNew, y, maxY)
   local w, h = term.getSize()
-  local maxWidth = w - 3  -- Leave space for margins
+  local maxWidth = w - 3  -- ааа
   
   -- а
   if y >= maxY then
@@ -387,7 +387,7 @@ local function chatInterface()
     drawHeader(config.chat_name)
     
     -- область
-    -- Header (2) + Two-line Input (2) + Status (1) = 5 lines reserved (спастил)
+    -- хуй
     local messageAreaEnd = h - 3 -- до двустрочного поля ввода
     
     -- типо
@@ -468,7 +468,7 @@ local function chatInterface()
         local input = read()
         
         if input and #input > 0 then
-          -- Check if it's a command
+          -- чеки
           if input:sub(1, 1) == "/" then
             done = handleCommand(input)
           else
