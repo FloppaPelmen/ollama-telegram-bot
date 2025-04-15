@@ -1,10 +1,7 @@
-local geoScanner = peripheral.find("geoScanner")
 local turtle = require("turtle")
 local fuelThreshold = 500
 local startPosition = {x = 0, y = 0, z = 0}
 local chestPosition = {x = 0, y = 0, z = 0} -- Позиция контейнера с топливом
-
-if not geoScanner then error("GeoScanner not found!") end
 
 -- Функция проверки допустимости позиции
 local function isValidPosition(x, y, z)
@@ -89,6 +86,11 @@ local function followPath(path)
                 returnToStart()
             end
 
+            -- Разрушаем блоки, если они мешают
+            if turtle.detect() then turtle.dig() end
+            if turtle.detectUp() then turtle.digUp() end
+            if turtle.detectDown() then turtle.digDown() end
+
             if currentY < node.y then
                 if turtle.up() then currentY = currentY + 1 end
             elseif currentY > node.y then
@@ -127,15 +129,6 @@ local function attackMob()
     while turtle.attack() do sleep(0.5) end
 end
 
--- Проверка враждебного моба
-local function isHostileMob(entity)
-    local hostileMobs = {"minecraft:zombie", "minecraft:skeleton", "minecraft:creeper", "minecraft:spider"}
-    for _, mob in ipairs(hostileMobs) do
-        if entity.name == mob then return true end
-    end
-    return false
-end
-
 -- Дозаправка топлива
 local function refuel()
     local path = findPath(gps.locate(5), chestPosition.x, chestPosition.y, chestPosition.z)
@@ -161,37 +154,33 @@ local function main()
     startPosition = {x = initialPosition[1], y = initialPosition[2], z = initialPosition[3]}
 
     while true do
-        local mobs = geoScanner.getClosestEntities()
-        if #mobs == 0 then
-            print("No mobs detected.")
-            sleep(5)
-        else
-            local closestMob
-            for _, mob in ipairs(mobs) do
-                if isHostileMob(mob) and isValidPosition(mob.x, mob.y, mob.z) then
-                    closestMob = mob
-                    break
-                end
+        -- Ищем мобов в непосредственной близости
+        local foundMob = false
+        for _ = 1, 4 do
+            if turtle.attack() then
+                print("Mob detected and attacked!")
+                attackMob()
+                foundMob = true
+                break
             end
-
-            if closestMob then
-                print("Targeting mob:", closestMob.name)
-                if turtle.getFuelLevel() < fuelThreshold then
-                    refuel()
-                end
-
-                local path = findPath(gps.locate(5), closestMob.x, closestMob.y, closestMob.z)
-                if path then
-                    followPath(path)
-                    attackMob()
-                else
-                    print("Cannot find path to mob!")
-                end
-            else
-                print("No valid hostile mobs found.")
-                sleep(5)
-            end
+            turtle.turnRight()
         end
+
+        if not foundMob then
+            print("No mobs detected nearby. Moving forward...")
+            if turtle.getFuelLevel() < fuelThreshold then
+                refuel()
+            end
+
+            -- Разрушаем блоки, если они мешают
+            if turtle.detect() then turtle.dig() end
+            if turtle.detectUp() then turtle.digUp() end
+            if turtle.detectDown() then turtle.digDown() end
+
+            turtle.forward()
+        end
+
+        sleep(1)
     end
 end
 
