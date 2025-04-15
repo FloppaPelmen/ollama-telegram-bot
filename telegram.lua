@@ -1,97 +1,198 @@
-local geo = peripheral.find("geoScanner")
-local startX, startY, startZ = gps.locate()
-local hostileMobs = {}
-local scannedArea = {}
-local minY = 60
-local fuelThreshold = 1000
+local geoScanner = peripheral.find("geoScanner")
+local turtle = require("turtle")
+local fuelThreshold = 500
+local startPosition = {x = 0, y = 0, z = 0}
+local chestPosition = {x = 0, y = 0, z = 0} -- Позиция контейнера с топливом
 
-local function getFuel()
-  return turtle.getFuelLevel()
+if not geoScanner then error("GeoScanner not found!") end
+
+-- Функция проверки допустимости позиции
+local function isValidPosition(x, y, z)
+    return y >= 60 and y <= 200
 end
 
-local function moveTo(x, y, z)
-  local function tryForward()
-    for i = 1, 5 do
-      if turtle.forward() then return true end
-      turtle.attack()
-      sleep(0.2)
+-- Алгоритм A* для поиска пути
+local function findPath(startX, startY, startZ, targetX, targetY, targetZ)
+    local openSet = {}
+    local closedSet = {}
+    local cameFrom = {}
+
+    local heuristic = function(x1, y1, z1, x2, y2, z2)
+        return math.abs(x1 - x2) + math.abs(y1 - y2) + math.abs(z1 - z2)
+    end
+
+    table.insert(openSet, {x = startX, y = startY, z = startZ, g = 0, h = heuristic(startX, startY, startZ, targetX, targetY, targetZ)})
+
+    while #openSet > 0 do
+        -- Находим узел с наименьшей стоимостью f = g + h
+        local current
+        for _, node in ipairs(openSet) do
+            if not current or (node.g + node.h) < (current.g + current.h) then
+                current = node
+            end
+        end
+
+        -- Если достигли цели
+        if current.x == targetX and current.y == targetY and current.z == targetZ then
+            local path = {}
+            while cameFrom[current] do
+                table.insert(path, 1, current)
+                current = cameFrom[current]
+            end
+            return path
+        end
+
+        -- Перемещаем текущий узел в closedSet
+        table.remove(openSet, table.indexOf(openSet, current))
+        table.insert(closedSet, current)
+
+        -- Проверяем соседние узлы
+        local neighbors = {
+            {x = current.x + 1, y = current.y, z = current.z},
+            {x = current.x - 1, y = current.y, z = current.z},
+            {x = current.x, y = current.y + 1, z = current.z},
+            {x = current.x, y = current.y - 1, z = current.z},
+            {x = current.x, y = current.y, z = current.z + 1},
+            {x = current.x, y = current.y, z = current.z - 1}
+        }
+
+        for _, neighbor in ipairs(neighbors) do
+            if isValidPosition(neighbor.x, neighbor.y, neighbor.z) and not table.contains(closedSet, neighbor) then
+                local tentativeG = current.g + 1
+                local existingNode = table.find(openSet, neighbor)
+
+                if not existingNode or tentativeG < existingNode.g then
+                    cameFrom[neighbor] = current
+                    neighbor.g = tentativeG
+                    neighbor.h = heuristic(neighbor.x, neighbor.y, neighbor.z, targetX, targetY, targetZ)
+
+                    if not existingNode then
+                        table.insert(openSet, neighbor)
+                    end
+                end
+            end
+        end
+    end
+
+    return nil -- Путь не найден
+end
+
+-- Функция перемещения по пути
+local function followPath(path)
+    for _, node in ipairs(path) do
+        local currentX, currentY, currentZ = gps.locate(5)
+        if not currentX then error("GPS signal lost!") end
+
+        while currentX ~= node.x or currentY ~= node.y or currentZ ~= node.z do
+            if turtle.getFuelLevel() < fuelThreshold then
+                print("Low fuel, returning to start position...")
+                returnToStart()
+            end
+
+            if currentY < node.y then
+                if turtle.up() then currentY = currentY + 1 end
+            elseif currentY > node.y then
+                if turtle.down() then currentY = currentY - 1 end
+            elseif currentX < node.x then
+                if turtle.forward() then currentX = currentX + 1 end
+            elseif currentX > node.x then
+                if turtle.back() then currentX = currentX - 1 end
+            elseif currentZ < node.z then
+                turtle.turnRight()
+                if turtle.forward() then currentZ = currentZ + 1 end
+                turtle.turnLeft()
+            elseif currentZ > node.z then
+                turtle.turnLeft()
+                if turtle.forward() then currentZ = currentZ - 1 end
+                turtle.turnRight()
+            end
+
+            currentX, currentY, currentZ = gps.locate(5)
+        end
+    end
+end
+
+-- Возвращение в начальную позицию
+local function returnToStart()
+    local path = findPath(gps.locate(5), startPosition.x, startPosition.y, startPosition.z)
+    if path then
+        followPath(path)
+    else
+        error("Cannot find path to start position!")
+    end
+end
+
+-- Атака моба
+local function attackMob()
+    while turtle.attack() do sleep(0.5) end
+end
+
+-- Проверка враждебного моба
+local function isHostileMob(entity)
+    local hostileMobs = {"minecraft:zombie", "minecraft:skeleton", "minecraft:creeper", "minecraft:spider"}
+    for _, mob in ipairs(hostileMobs) do
+        if entity.name == mob then return true end
     end
     return false
-  end
+end
 
-  local function faceDirection(dx, dz)
-    local directions = { {1,0}, {0,1}, {-1,0}, {0,-1} }
-    for i = 1, 4 do
-      if directions[i][1] == dx and directions[i][2] == dz then
-        while i ~= 1 do
-          turtle.turnRight()
-          i = (i % 4) + 1
+-- Дозаправка топлива
+local function refuel()
+    local path = findPath(gps.locate(5), chestPosition.x, chestPosition.y, chestPosition.z)
+    if path then
+        followPath(path)
+        for i = 1, 16 do
+            turtle.select(i)
+            if turtle.refuel(0) then
+                print("Refueled from slot", i)
+                break
+            end
         end
-        break
-      end
-    end
-  end
-
-  local cx, cy, cz = gps.locate()
-  local dx, dy, dz = x - cx, y - cy, z - cz
-  for i = 1, math.abs(dy) do
-    if dy > 0 then turtle.up() else turtle.down() end
-  end
-  while dx ~= 0 or dz ~= 0 do
-    local stepX = dx ~= 0 and (dx > 0 and 1 or -1) or 0
-    local stepZ = dz ~= 0 and (dz > 0 and 1 or -1) or 0
-    faceDirection(stepX, stepZ)
-    if tryForward() then
-      dx = dx - stepX
-      dz = dz - stepZ
+        returnToStart()
     else
-      break
+        error("Cannot find path to fuel chest!")
     end
-  end
 end
 
-local function scan()
-  local ok, entities = pcall(geo.scanEntities)
-  if not ok or not entities then return {} end
-  local results = {}
-  for _, e in pairs(entities) do
-    if e.y >= minY and e.hostile and not scannedArea[e.x..","..e.y..","..e.z] then
-      table.insert(results, e)
-      scannedArea[e.x..","..e.y..","..e.z] = true
-    end
-  end
-  return results
-end
-
-local function attackAround()
-  for i = 1, 4 do
-    turtle.attack()
-    turtle.turnRight()
-  end
-  turtle.attackUp()
-  turtle.attackDown()
-end
-
-local function returnToStart()
-  moveTo(startX, startY, startZ)
-end
-
+-- Основной цикл
 local function main()
-  while true do
-    if getFuel() < fuelThreshold then returnToStart() break end
-    local mobs = scan()
-    if #mobs == 0 then sleep(3) goto continue end
-    table.sort(mobs, function(a, b)
-      local ax, ay, az = gps.locate()
-      local da = math.abs(a.x - ax) + math.abs(a.y - ay) + math.abs(a.z - az)
-      local db = math.abs(b.x - ax) + math.abs(b.y - ay) + math.abs(b.z - az)
-      return da < db
-    end)
-    local target = mobs[1]
-    moveTo(target.x, target.y, target.z)
-    attackAround()
-    ::continue::
-  end
+    startPosition = {gps.locate(5)}
+    if not startPosition[1] then error("Initial GPS signal lost!") end
+
+    while true do
+        local mobs = geoScanner.getClosestEntities()
+        if #mobs == 0 then
+            print("No mobs detected.")
+            sleep(5)
+        else
+            local closestMob
+            for _, mob in ipairs(mobs) do
+                if isHostileMob(mob) and isValidPosition(mob.x, mob.y, mob.z) then
+                    closestMob = mob
+                    break
+                end
+            end
+
+            if closestMob then
+                print("Targeting mob:", closestMob.name)
+                if turtle.getFuelLevel() < fuelThreshold then
+                    refuel()
+                end
+
+                local path = findPath(gps.locate(5), closestMob.x, closestMob.y, closestMob.z)
+                if path then
+                    followPath(path)
+                    attackMob()
+                else
+                    print("Cannot find path to mob!")
+                end
+            else
+                print("No valid hostile mobs found.")
+                sleep(5)
+            end
+        end
+    end
 end
 
-main()
+local success, err = pcall(main)
+if not success then print("Error:", err) end
